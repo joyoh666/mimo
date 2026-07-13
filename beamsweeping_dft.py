@@ -1,3 +1,7 @@
+import math
+import operator
+from numbers import Real
+
 import torch
 from sionna.phy.mimo import (
     grid_of_beams_dft_ula,
@@ -29,6 +33,9 @@ class DFTCodebook:
         device: str = "cpu",
         precision=None,
     ):
+        if not isinstance(array_type, str):
+            raise TypeError("array_type must be a string.")
+
         self.array_type = array_type.lower()
         self.device = device
         self.normalize = normalize
@@ -38,16 +45,22 @@ class DFTCodebook:
             if num_ant is None:
                 raise ValueError("For ULA, num_ant must be provided.")
 
-            self.num_ant = num_ant
+            self.num_ant = self._validate_integer("num_ant", num_ant, minimum=1)
             self.num_ant_v = None
             self.num_ant_h = None
-            self.oversampling = oversampling
+            self.oversampling = self._validate_integer(
+                "oversampling", oversampling, minimum=1
+            )
+            self.oversampling_v = None
+            self.oversampling_h = None
 
             codebook = grid_of_beams_dft_ula(
-                num_ant=num_ant,
-                oversmpl=oversampling,
+                num_ant=self.num_ant,
+                oversmpl=self.oversampling,
                 precision=precision,
             )
+
+            self._beam_grid_shape = (self.num_ant * self.oversampling,)
 
             # Sionna output:
             # [num_ant * oversampling, num_ant]
@@ -59,18 +72,32 @@ class DFTCodebook:
                     "For URA/UPA, num_ant_v and num_ant_h must be provided."
                 )
 
-            self.num_ant_v = num_ant_v
-            self.num_ant_h = num_ant_h
-            self.num_ant = num_ant_v * num_ant_h
-            self.oversampling_v = oversampling_v
-            self.oversampling_h = oversampling_h
+            self.num_ant_v = self._validate_integer(
+                "num_ant_v", num_ant_v, minimum=1
+            )
+            self.num_ant_h = self._validate_integer(
+                "num_ant_h", num_ant_h, minimum=1
+            )
+            self.num_ant = self.num_ant_v * self.num_ant_h
+            self.oversampling = None
+            self.oversampling_v = self._validate_integer(
+                "oversampling_v", oversampling_v, minimum=1
+            )
+            self.oversampling_h = self._validate_integer(
+                "oversampling_h", oversampling_h, minimum=1
+            )
 
             codebook = grid_of_beams_dft(
-                num_ant_v=num_ant_v,
-                num_ant_h=num_ant_h,
-                oversmpl_v=oversampling_v,
-                oversmpl_h=oversampling_h,
+                num_ant_v=self.num_ant_v,
+                num_ant_h=self.num_ant_h,
+                oversmpl_v=self.oversampling_v,
+                oversmpl_h=self.oversampling_h,
                 precision=precision,
+            )
+
+            self._beam_grid_shape = (
+                self.num_ant_v * self.oversampling_v,
+                self.num_ant_h * self.oversampling_h,
             )
 
             # Sionna output:
@@ -92,6 +119,23 @@ class DFTCodebook:
 
         if self.normalize:
             self.codebook = self._normalize_codebook(self.codebook)
+
+    @staticmethod
+    def _validate_integer(name, value, minimum):
+        if isinstance(value, bool):
+            raise ValueError(f"{name} must be an integer >= {minimum}.")
+
+        try:
+            value = operator.index(value)
+        except TypeError as error:
+            raise ValueError(
+                f"{name} must be an integer >= {minimum}."
+            ) from error
+
+        if value < minimum:
+            raise ValueError(f"{name} must be an integer >= {minimum}.")
+
+        return value
 
     @staticmethod
     def _normalize_codebook(codebook):
@@ -119,6 +163,12 @@ class DFTCodebook:
     @property
     def num_tx_ant(self):
         return self.codebook.shape[1]
+
+    @property
+    def beam_grid_shape(self):
+        """Number of DFT beams along each physical array axis."""
+
+        return self._beam_grid_shape
 
     def get_codebook(self):
         return self.codebook
@@ -157,8 +207,8 @@ class DFTBeamSweeper:
         power_m = || H w_m ||^2
 
     Output:
-        best_beam_index: [...]
         best_beam: [..., M]
+        best_beam_index: [...]
         best_power: [...]
     """
 
@@ -167,15 +217,10 @@ class DFTBeamSweeper:
         self.codebook = codebook.get_codebook()
 
     def compute_beam_power(self, h):
-        self._check_channel_shape(h)
+        self._check_channel_compatibility(h)
 
-        if h.shape[-1] != self.codebook.shape[-1]:
-           raise ValueError(
-                f"Channel has num_tx_ant={h.shape[-1]}, "
-                f"but codebook has num_tx_ant={self.codebook.shape[-1]}."
-            )
-
-        effective_channels = torch.einsum("...km,bm->...kb", h, self.codebook)
+        h, codebook = self._align_operands(h, self.codebook)
+        effective_channels = torch.einsum("...km,bm->...kb", h, codebook)
 
         beam_powers = torch.sum(torch.abs(effective_channels)**2, dim=-2)
 
@@ -186,12 +231,35 @@ class DFTBeamSweeper:
 
         best_power, best_index = torch.max(beam_powers, dim=-1)
 
-        best_beam = self.codebook[best_index]
+        best_beam = self._beam_for_channel(best_index, h)
 
         return best_beam, best_index, best_power
+
+    def _beam_for_channel(self, beam_index, h):
+        _, codebook = self._align_operands(h, self.codebook)
+        return codebook[beam_index]
+
+    def _check_channel_compatibility(self, h):
+        self._check_channel_shape(h)
+
+        if h.shape[-1] != self.codebook.shape[-1]:
+            raise ValueError(
+                f"Channel has num_tx_ant={h.shape[-1]}, "
+                f"but codebook has num_tx_ant={self.codebook.shape[-1]}."
+            )
+
+        if h.device != self.codebook.device:
+            raise ValueError(
+                f"h is on {h.device}, but the codebook is on "
+                f"{self.codebook.device}. Create the codebook on the channel "
+                "device or move h first."
+            )
     
     @staticmethod
     def _check_channel_shape(h):
+        if not torch.is_tensor(h):
+            raise TypeError("h must be a torch.Tensor.")
+
         if h.ndim < 2:
             raise ValueError(
                 "h must have shape [..., K, M]."
@@ -206,6 +274,22 @@ class DFTBeamSweeper:
             raise ValueError(
                 "Second last dimension of h must be K."
             )
+
+        if not (h.is_floating_point() or h.is_complex()):
+            raise TypeError("h must have a real or complex floating-point dtype.")
+
+    @staticmethod
+    def _align_operands(h, codebook):
+        """Align channel/codebook dtype while keeping device errors explicit."""
+
+        if h.device != codebook.device:
+            raise ValueError(
+                f"h is on {h.device}, but the codebook is on {codebook.device}. "
+                "Create the codebook on the channel device or move h first."
+            )
+
+        common_dtype = torch.promote_types(h.dtype, codebook.dtype)
+        return h.to(dtype=common_dtype), codebook.to(dtype=common_dtype)
         
 class CodebookPrecoder:
     def __init__(self, beam_sweeper:DFTBeamSweeper):
@@ -216,13 +300,60 @@ class CodebookPrecoder:
         return best_beam.unsqueeze(-1)
     
     def apply(self, x, h):
-       best_beam, _, _ = self.beam_sweeper.select_beam(h)
+        """
+        Apply the selected beam to one or more symbols.
 
-       x_precoded = best_beam * x.unsqueeze(-1)
+        ``x`` must start with the channel's beam-selection dimensions. Any
+        additional trailing dimensions are treated as symbol/resource axes and
+        use the same selected beam.
+        """
 
-       return x_precoded
+        if not torch.is_tensor(x):
+            raise TypeError("x must be a torch.Tensor.")
+
+        best_beam, _, _ = self.beam_sweeper.select_beam(h)
+
+        if x.device != best_beam.device:
+            raise ValueError(
+                f"x is on {x.device}, but the selected beam is on "
+                f"{best_beam.device}."
+            )
+
+        beam_selection_shape = best_beam.shape[:-1]
+        if x.ndim < len(beam_selection_shape):
+            raise ValueError(
+                "x has fewer dimensions than the beam-selection dimensions "
+                f"{tuple(beam_selection_shape)}."
+            )
+
+        for x_size, beam_size in zip(x.shape, beam_selection_shape):
+            if x_size != beam_size and x_size != 1 and beam_size != 1:
+                raise ValueError(
+                    "The leading dimensions of x must be broadcast-compatible "
+                    f"with {tuple(beam_selection_shape)}, but got {tuple(x.shape)}."
+                )
+
+        for _ in range(x.ndim - len(beam_selection_shape)):
+            best_beam = best_beam.unsqueeze(-2)
+
+        x_precoded = best_beam * x.unsqueeze(-1)
+
+        return x_precoded
     
 class DFTBeamTracker:
+    """
+    Track a DFT beam for batched or unbatched channels.
+
+    Batched channels have shape ``[batch, ..., K, M]``. Dimensions between the
+    batch and receive dimensions are averaged so that each batch element keeps
+    one analog beam. An unbatched ``[K, M]`` channel is handled as batch size 1.
+
+    ``frame_count`` is the number of tracking frames since the most recent full
+    sweep. A periodic or power-drop-triggered full sweep resets it to zero.
+    Because the tracker exposes one mode and one counter, a power-drop trigger
+    in any batch element starts a batch-wide full sweep.
+    """
+
     def __init__(self,
                  codebook: DFTCodebook,
                  neighbor_radius: int=1,
@@ -233,13 +364,30 @@ class DFTBeamTracker:
         self.codebook = codebook.get_codebook()
         self.sweeper = DFTBeamSweeper(codebook)
 
-        self.neighbor_radius = neighbor_radius
-        self.full_sweep_period = full_sweep_period
-        self.power_drop_threshold_db = power_drop_threshold_db
+        self.neighbor_radius = DFTCodebook._validate_integer(
+            "neighbor_radius", neighbor_radius, minimum=0
+        )
+        self.full_sweep_period = DFTCodebook._validate_integer(
+            "full_sweep_period", full_sweep_period, minimum=1
+        )
+
+        if (
+            isinstance(power_drop_threshold_db, bool)
+            or not isinstance(power_drop_threshold_db, Real)
+            or not math.isfinite(power_drop_threshold_db)
+            or power_drop_threshold_db < 0
+        ):
+            raise ValueError(
+                "power_drop_threshold_db must be a finite non-negative number."
+            )
+        self.power_drop_threshold_db = float(power_drop_threshold_db)
 
         self.current_beam_index = None
         self.current_power = None
         self.frame_count = 0
+        self._batch_size = None
+        self.last_full_sweep_mask = None
+        self.last_power_drop_mask = None
 
     def initialize(self, h):
         """
@@ -247,17 +395,14 @@ class DFTBeamTracker:
         전체 코드북을 sweeping해서 초기 beam 선택.
         """
 
-        beam_powers = self.sweeper.compute_beam_power(h)
-        beam_powers = self._average_non_beam_dims(beam_powers)
+        h, was_unbatched = self._prepare_tracking_channel(h)
+        best_beam, best_index, best_power = self._perform_full_sweep(
+            h, prefer_current_on_tie=False
+        )
 
-        best_power, best_index = torch.max(beam_powers, dim=-1)
-
-        self.current_beam_index = best_index
-        self.current_power = best_power
-
-        best_beam = self.codebook[best_index]
-
-        return best_beam, best_index, best_power
+        return self._restore_unbatched(
+            best_beam, best_index, best_power, was_unbatched
+        )
 
     def update(self, h):
         """
@@ -275,15 +420,29 @@ class DFTBeamTracker:
         if self.current_beam_index is None:
             best_beam, best_index, best_power = self.initialize(h)
             return best_beam, best_index, best_power, "init"
-        
+
+        h, was_unbatched = self._prepare_tracking_channel(h)
+        self.sweeper._check_channel_compatibility(h)
+        if h.shape[0] != self._batch_size:
+            raise ValueError(
+                "The channel batch size changed from "
+                f"{self._batch_size} to {h.shape[0]}. Call initialize() to "
+                "start tracking the new batch."
+            )
+
         self.frame_count += 1
 
-        #주기적으로 full sweep 수행
-        if self.frame_count % self.full_sweep_period == 0:
-            best_beam, best_index, best_power = self.initialize(h)
-            return best_beam, best_index, best_power, "full-sweep"
-        
-        #이전 beam 주변만 탐색
+        # 주기적으로 full sweep 수행
+        if self.frame_count >= self.full_sweep_period:
+            best_beam, best_index, best_power = self._perform_full_sweep(
+                h, prefer_current_on_tie=True
+            )
+            best_beam, best_index, best_power = self._restore_unbatched(
+                best_beam, best_index, best_power, was_unbatched
+            )
+            return best_beam, best_index, best_power, "full_sweep"
+
+        # 이전 beam 주변만 탐색
         candidate_indices = self._get_neighbor_indices(
             self.current_beam_index
         )
@@ -303,34 +462,115 @@ class DFTBeamTracker:
             best_local_pos
         ]
 
-        best_beam = self.codebook[best_index]
+        best_beam = self.sweeper._beam_for_channel(best_index, h)
 
+        power_dtype = torch.promote_types(
+            self.current_power.dtype, best_local_power.dtype
+        )
+        previous_power = self.current_power.to(dtype=power_dtype)
+        local_power = best_local_power.to(dtype=power_dtype)
+        power_floor = torch.finfo(power_dtype).tiny
         power_drop_db = 10.0 * torch.log10(
-            (self.current_power + 1e-12) / (best_local_power + 1e-12)
+            torch.clamp(previous_power, min=power_floor)
+            / torch.clamp(local_power, min=power_floor)
         )
 
         need_full_sweep = power_drop_db > self.power_drop_threshold_db
 
         if torch.any(need_full_sweep):
-            full_beam_powers = self.sweeper.compute_beam_power(h)
-            full_beam_powers = self._average_non_beam_dims(full_beam_powers)
-
-            full_power, full_index = torch.max(full_beam_powers, dim=-1)
-            full_beam = self.codebook[full_index]
-
-            best_index = torch.where(need_full_sweep, full_index, best_index)
-            best_power = torch.where(need_full_sweep, full_power, best_local_power)
-            best_beam = self.codebook[best_index]
-
+            best_beam, best_index, best_power = self._perform_full_sweep(
+                h,
+                prefer_current_on_tie=True,
+                power_drop_mask=need_full_sweep,
+            )
             mode = "full_sweep"
         else:
             best_power = best_local_power
+            self.last_full_sweep_mask = torch.zeros_like(
+                best_index, dtype=torch.bool
+            )
+            self.last_power_drop_mask = torch.zeros_like(
+                best_index, dtype=torch.bool
+            )
             mode = "track"
 
         self.current_beam_index = best_index
         self.current_power = best_power
 
+        best_beam, best_index, best_power = self._restore_unbatched(
+            best_beam, best_index, best_power, was_unbatched
+        )
+
         return best_beam, best_index, best_power, mode
+
+    def reset(self):
+        """Forget all tracking state so that the next update performs a sweep."""
+
+        self.current_beam_index = None
+        self.current_power = None
+        self.frame_count = 0
+        self._batch_size = None
+        self.last_full_sweep_mask = None
+        self.last_power_drop_mask = None
+
+    def _perform_full_sweep(
+        self,
+        h,
+        prefer_current_on_tie,
+        power_drop_mask=None,
+    ):
+        beam_powers = self.sweeper.compute_beam_power(h)
+        beam_powers = self._average_non_beam_dims(beam_powers)
+
+        best_power, best_index = torch.max(beam_powers, dim=-1)
+
+        if prefer_current_on_tie and self.current_beam_index is not None:
+            current_power = torch.gather(
+                beam_powers,
+                dim=-1,
+                index=self.current_beam_index.unsqueeze(-1),
+            ).squeeze(-1)
+            tolerance = (
+                8.0
+                * torch.finfo(best_power.dtype).eps
+                * best_power.abs()
+            )
+            keep_current = current_power >= best_power - tolerance
+            best_index = torch.where(
+                keep_current, self.current_beam_index, best_index
+            )
+            best_power = torch.where(keep_current, current_power, best_power)
+
+        self.current_beam_index = best_index
+        self.current_power = best_power
+        self.frame_count = 0
+        self._batch_size = h.shape[0]
+        self.last_full_sweep_mask = torch.ones_like(best_index, dtype=torch.bool)
+        if power_drop_mask is None:
+            power_drop_mask = torch.zeros_like(best_index, dtype=torch.bool)
+        self.last_power_drop_mask = power_drop_mask.clone()
+
+        best_beam = self.sweeper._beam_for_channel(best_index, h)
+        return best_beam, best_index, best_power
+
+    @staticmethod
+    def _prepare_tracking_channel(h):
+        DFTBeamSweeper._check_channel_shape(h)
+
+        if h.ndim == 2:
+            return h.unsqueeze(0), True
+
+        if h.shape[0] < 1:
+            raise ValueError("The channel batch dimension must be non-empty.")
+
+        return h, False
+
+    @staticmethod
+    def _restore_unbatched(best_beam, best_index, best_power, was_unbatched):
+        if was_unbatched:
+            return best_beam[0], best_index[0], best_power[0]
+
+        return best_beam, best_index, best_power
 
     def _average_non_beam_dims(self, beam_powers):
         """
@@ -340,6 +580,11 @@ class DFTBeamTracker:
         OFDM이면 symbol/subcarrier 축 평균.
         Flat이면 그대로 사용.
         """
+
+        if beam_powers.ndim < 2:
+            raise ValueError(
+                "beam_powers must include batch and beam dimensions."
+            )
 
         if beam_powers.ndim == 2:
             return beam_powers
@@ -365,54 +610,73 @@ class DFTBeamTracker:
             [batch, num_candidates]
         """
 
-        batch_size = h.shape[0]
-        powers = []
+        if h.ndim < 3:
+            raise ValueError("h must have shape [batch, ..., K, M].")
 
-        for b in range(batch_size):
-            h_b = h[b:b+1]
-            cb_b = self.codebook[candidate_indices[b]]
-
-            effective = torch.einsum(
-                "...km,bm->...kb",
-                h_b,
-                cb_b
+        if candidate_indices.ndim != 2 or candidate_indices.shape[0] != h.shape[0]:
+            raise ValueError(
+                "candidate_indices must have shape [batch, num_candidates]."
             )
 
-            power = torch.sum(
-                torch.abs(effective) ** 2,
-                dim=-2
-            )
+        candidate_codebooks = self.codebook[candidate_indices]
+        h, candidate_codebooks = self.sweeper._align_operands(
+            h, candidate_codebooks
+        )
 
-            power = self._average_non_beam_dims(power)
-            power = power.squeeze(0)
+        effective = torch.einsum(
+            "b...km,bcm->b...kc",
+            h,
+            candidate_codebooks,
+        )
+        power = torch.sum(torch.abs(effective) ** 2, dim=-2)
 
-            powers.append(power)
-
-        return torch.stack(powers, dim=0)
+        return self._average_non_beam_dims(power)
 
     def _get_neighbor_indices(self, beam_index):
         """
         현재 beam index 주변 후보 beam index 반환.
 
-        현재 구현은 ULA 또는 flatten된 코드북 기준.
-        우선 단순하게 index 주변 beam을 후보로 사용한다.
+        DFT beam grid is periodic. ULA neighbors wrap around the single beam
+        axis, while URA/UPA neighbors are formed over both physical grid axes.
         """
 
         device = beam_index.device
-        num_beams = self.codebook.shape[0]
+        if beam_index.ndim != 1:
+            raise ValueError("beam_index must have shape [batch].")
 
-        offsets = torch.arange(
-            -self.neighbor_radius,
-            self.neighbor_radius + 1,
-            device=device
+        grid_shape = self.codebook_obj.beam_grid_shape
+
+        if len(grid_shape) == 1:
+            num_beams = grid_shape[0]
+            offsets = self._axis_offsets(num_beams, device)
+            return torch.remainder(
+                beam_index.unsqueeze(-1) + offsets.unsqueeze(0),
+                num_beams,
+            )
+
+        num_beams_v, num_beams_h = grid_shape
+        offsets_v = self._axis_offsets(num_beams_v, device)
+        offsets_h = self._axis_offsets(num_beams_h, device)
+
+        current_v = torch.div(beam_index, num_beams_h, rounding_mode="floor")
+        current_h = torch.remainder(beam_index, num_beams_h)
+
+        candidate_v = torch.remainder(
+            current_v[:, None, None] + offsets_v[None, :, None],
+            num_beams_v,
+        )
+        candidate_h = torch.remainder(
+            current_h[:, None, None] + offsets_h[None, None, :],
+            num_beams_h,
         )
 
-        candidate_indices = beam_index.unsqueeze(-1) + offsets.unsqueeze(0)
+        candidate_indices = candidate_v * num_beams_h + candidate_h
+        return candidate_indices.flatten(start_dim=1)
 
-        candidate_indices = torch.clamp(
-            candidate_indices,
-            min=0,
-            max=num_beams - 1
-        )
+    def _axis_offsets(self, axis_size, device):
+        if 2 * self.neighbor_radius + 1 >= axis_size:
+            return torch.arange(axis_size, device=device)
 
-        return candidate_indices
+        steps = torch.arange(1, self.neighbor_radius + 1, device=device)
+        signed_steps = torch.stack((-steps, steps), dim=-1).flatten()
+        return torch.cat((torch.zeros(1, dtype=torch.long, device=device), signed_steps))
