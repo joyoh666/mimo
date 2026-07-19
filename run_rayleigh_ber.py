@@ -11,9 +11,9 @@ from sionna.phy.channel.tr38901 import TDL
 # src 폴더를 쓰는 경우
 # sys.path.append("../")
 
-from modem import Modem
-from ofdm import OFDMResourceGrid
-from receiver import OFDMReceiver
+from phy.modem import Modem
+from phy.ofdm import OFDMResourceGrid
+from phy.receiver import OFDMReceiver
 
 
 # ============================================================
