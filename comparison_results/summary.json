@@ -1,0 +1,61 @@
+{
+  "num_samples": 4,
+  "data_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/indoor_28g_dataset/t16x16_r2x1_test_small",
+  "generator_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/saved_models/generator.pth",
+  "estimator_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/saved_models/estimator.pth",
+  "arn_model_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/saved_models/arn_model.pth",
+  "exhaustive_baseline": "80 x 20 BeamFormer query beam grid",
+  "exact_match_rate": 0.5,
+  "similarity": {
+    "mean": 0.8637131899595261,
+    "median": 0.9340198338031769,
+    "p10": 0.6711810648441314,
+    "p90": 1.0,
+    "min": 0.5868130922317505,
+    "max": 1.0
+  },
+  "gain_loss_db": {
+    "mean": 0.31512357252356793,
+    "median": 0.24042846341068724,
+    "p10": 0.0,
+    "p90": 0.6900032323374404,
+    "min": 0.0,
+    "max": 0.7796373632728972
+  },
+  "ebno_dbs": [
+    -5.0,
+    0.0,
+    5.0,
+    10.0,
+    15.0,
+    20.0
+  ],
+  "ber_type": "Monte Carlo uncoded QPSK over actual effective channels",
+  "ber_symbols_per_channel": 512,
+  "ber": {
+    "BeamFormer CSI-RS": [
+      0.5004653930664062,
+      0.49930381774902344,
+      0.5006427764892578,
+      0.4984111785888672,
+      0.4987068176269531,
+      0.4982261657714844
+    ],
+    "Exhaustive sweep": [
+      0.5006828308105469,
+      0.49799537658691406,
+      0.50091552734375,
+      0.49698829650878906,
+      0.4988365173339844,
+      0.49750709533691406
+    ],
+    "Best measured CSI-RS ref": [
+      0.49979400634765625,
+      0.5001754760742188,
+      0.5010776519775391,
+      0.4989471435546875,
+      0.4987354278564453,
+      0.4991626739501953
+    ]
+  }
+}

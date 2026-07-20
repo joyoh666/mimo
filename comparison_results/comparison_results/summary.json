@@ -1,0 +1,89 @@
+{
+  "num_samples": 1000,
+  "data_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/indoor_28g_dataset/t16x16_r2x1_test_small",
+  "generator_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/saved_models/generator.pth",
+  "estimator_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/saved_models/estimator.pth",
+  "arn_model_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/saved_models/arn_model.pth",
+  "optimal_beam_definition": "dominant eigenvector of mean_f H_f^H H_f for the active receiver",
+  "sweep_baseline": {
+    "label": "64-beam uniform query-grid sweep (16 x 4)",
+    "mode": "uniform_query_grid",
+    "requested_sweep_size": 64,
+    "actual_sweep_size": 64,
+    "query_grid": "80 x 20 BeamFormer query beam grid"
+  },
+  "beamformer_sweep_match_rate": 0.025,
+  "similarity_to_optimal": {
+    "Optimal vs 64-beam uniform query-grid sweep (16 x 4)": {
+      "mean": 0.3193753710705787,
+      "median": 0.26221029460430145,
+      "p10": 0.08937233537435532,
+      "p90": 0.6382832944393159,
+      "min": 0.005346762016415596,
+      "max": 0.9687368869781494
+    },
+    "Optimal vs BeamFormer": {
+      "mean": 0.763333899908699,
+      "median": 0.8132016956806183,
+      "p10": 0.5501889944076538,
+      "p90": 0.9401026844978333,
+      "min": 0.0026167798787355423,
+      "max": 0.9879871606826782
+    }
+  },
+  "gain_loss_to_optimal_db": {
+    "Optimal vs 64-beam uniform query-grid sweep (16 x 4)": {
+      "mean": 10.756856905218816,
+      "median": 10.368883492588495,
+      "p10": 3.753761579143851,
+      "p90": 18.303071022230533,
+      "min": 0.27547048902977167,
+      "max": 26.398023389679445
+    },
+    "Optimal vs BeamFormer": {
+      "mean": 2.8780060257690976,
+      "median": 1.7194618714221193,
+      "p10": 0.5180474761675058,
+      "p90": 4.723051878983712,
+      "min": 0.10482472597266224,
+      "max": 49.162180963435034
+    }
+  },
+  "ebno_dbs": [
+    -5.0,
+    0.0,
+    5.0,
+    10.0,
+    15.0,
+    20.0
+  ],
+  "ber_mode": "monte_carlo",
+  "ber_type": "Monte Carlo uncoded QPSK using method RSS / optimal RSS as the Eb/N0 scale",
+  "ber_symbols_per_sample": 512,
+  "ber": {
+    "Optimal": [
+      0.212791015625,
+      0.078943359375,
+      0.0060625,
+      4.8828125e-06,
+      0.0,
+      0.0
+    ],
+    "64-beam uniform query-grid sweep (16 x 4)": [
+      0.391814453125,
+      0.31802734375,
+      0.21986328125,
+      0.1201240234375,
+      0.0487744140625,
+      0.0124873046875
+    ],
+    "BeamFormer CSI-RS": [
+      0.270876953125,
+      0.14465234375,
+      0.0418740234375,
+      0.0129404296875,
+      0.0091044921875,
+      0.006904296875
+    ]
+  }
+}

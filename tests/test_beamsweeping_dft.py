@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from beamsweeping_dft import (
+from BeamManagement.beamsweeping_dft import (
     CodebookPrecoder,
     DFTBeamSweeper,
     DFTBeamTracker,
