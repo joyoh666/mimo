@@ -1,0 +1,100 @@
+{
+  "num_samples": 1000,
+  "data_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/indoor_28g_dataset/t16x16_r2x1_test_small",
+  "generator_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/saved_models/generator.pth",
+  "estimator_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/saved_models/estimator.pth",
+  "arn_model_path": "/home/cbchae-spark2/mimo/BeamFormer/mini_demo/saved_models/arn_model.pth",
+  "beamformer_method": "argmax direction from BeamFormer predicted RSS spectrum, then use that query-grid steering vector as the beamforming vector",
+  "omp_target": "dominant eigenvector of mean_f H_f^H H_f for the active receiver",
+  "omp_dictionary": "unit-norm steering-vector columns from the BeamFormer top-k predicted RSS directions",
+  "top_k": 10,
+  "omp_sparsity": 10,
+  "ebno_dbs": [
+    -5.0,
+    0.0,
+    5.0,
+    10.0,
+    15.0,
+    20.0
+  ],
+  "ber_mode": "monte_carlo",
+  "ber_symbols_per_sample": 512,
+  "ber": {
+    "Optimal": [
+      0.212791015625,
+      0.078943359375,
+      0.0060625,
+      4.8828125e-06,
+      0.0,
+      0.0
+    ],
+    "BeamFormer top-1 steering": [
+      0.270876953125,
+      0.14465234375,
+      0.0418740234375,
+      0.0129404296875,
+      0.0091044921875,
+      0.006904296875
+    ],
+    "BeamFormer top-10 OMP": [
+      0.23702734375,
+      0.10435546875,
+      0.016412109375,
+      0.002095703125,
+      0.0011845703125,
+      0.000615234375
+    ]
+  },
+  "gain_loss_to_optimal_db": {
+    "Optimal": {
+      "mean": 0.0,
+      "median": 0.0,
+      "p10": 0.0,
+      "p90": 0.0,
+      "min": 0.0,
+      "max": 0.0
+    },
+    "BeamFormer top-1 steering": {
+      "mean": 2.8780060257690976,
+      "median": 1.7194618714221193,
+      "p10": 0.5180474761675058,
+      "p90": 4.723051878983712,
+      "min": 0.10482472597266224,
+      "max": 49.162180963435034
+    },
+    "BeamFormer top-10 OMP": {
+      "mean": 1.0284037314942596,
+      "median": 0.5758828005155223,
+      "p10": 0.10832279714991984,
+      "p90": 2.2177711272528544,
+      "min": 0.0063619747797361015,
+      "max": 28.10013296302219
+    }
+  },
+  "similarity_to_optimal": {
+    "BeamFormer top-1 steering": {
+      "mean": 0.763333899908699,
+      "median": 0.8132016956806183,
+      "p10": 0.5501889944076538,
+      "p90": 0.9401026844978333,
+      "min": 0.0026167798787355423,
+      "max": 0.9879871606826782
+    },
+    "BeamFormer top-10 OMP": {
+      "mean": 0.8965833081584423,
+      "median": 0.9333454966545105,
+      "p10": 0.7667050838470459,
+      "p90": 0.9873619377613068,
+      "min": 0.027043016627430916,
+      "max": 0.9992620944976807
+    }
+  },
+  "omp_gain_loss_minus_beamformer_top1_gain_loss_db": {
+    "mean": -1.8496022942748378,
+    "median": -0.919424272629378,
+    "p10": -3.28179159038329,
+    "p90": -0.23747892593979142,
+    "min": -43.01751797515499,
+    "max": 5.1689848526055755
+  }
+}

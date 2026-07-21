@@ -32,7 +32,7 @@ PROJECT_ROOT = SCRIPT_DIR if (SCRIPT_DIR / "BeamFormer").exists() else SCRIPT_DI
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-import compare_beamformer_csirs_vs_exhaustive as baseline
+import baseline
 
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "topk_omp_results"
